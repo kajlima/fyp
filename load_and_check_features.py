@@ -9,8 +9,13 @@ Tujuan:
 
 Cara pakai:
     python load_and_check_features.py
-atau arahkan ke folder lain:
-    python load_and_check_features.py --data-dir "C:/path/ke/folder/csv"
+atau arahkan ke folder lain dan tentukan file Excel keluaran:
+    python load_and_check_features.py --data-dir "C:/path/ke/folder/csv" --out hasil_cek_fitur.xlsx
+
+Hasil:
+- Dicetak ke layar (terminal), DAN
+- Disimpan ke satu file Excel (default: hasil_cek_fitur.xlsx) berisi 2 sheet per
+  dataset: "<tahun>_data" (100 baris) dan "<tahun>_ringkasan" (cek blank vs nilai).
 """
 
 from __future__ import annotations
@@ -115,10 +120,19 @@ def main() -> None:
         default=N_ROWS,
         help=f"Jumlah baris pertama yang dimuat (default: {N_ROWS}).",
     )
+    parser.add_argument(
+        "--out",
+        default="hasil_cek_fitur.xlsx",
+        help="Nama file Excel keluaran (default: hasil_cek_fitur.xlsx).",
+    )
     args = parser.parse_args()
 
     pd.set_option("display.max_columns", None)
     pd.set_option("display.width", 200)
+
+    # Kumpulkan hasil tiap dataset untuk ditulis ke Excel di akhir.
+    excel_sheets: dict[str, pd.DataFrame] = {}
+    all_summaries: list[pd.DataFrame] = []
 
     for name in DATASETS:
         path = os.path.join(args.data_dir, name)
@@ -137,8 +151,34 @@ def main() -> None:
         print(f"\n100 baris pertama (bentuk: {df.shape[0]} baris x {df.shape[1]} kolom)")
         print(df.head(100).to_string(index=False))
 
+        summary = check_blank_or_values(df)
         print("\nRINGKASAN: blank vs ada nilai")
-        print(check_blank_or_values(df).to_string(index=False))
+        print(summary.to_string(index=False))
+
+        # Nama sheet maksimal 31 karakter -> pakai label ringkas dari nama file.
+        label = os.path.splitext(name)[0].replace("dataset_", "").replace("_hash", "")
+        excel_sheets[f"{label}_data"[:31]] = df
+        excel_sheets[f"{label}_ringkasan"[:31]] = summary
+
+        summary_with_src = summary.copy()
+        summary_with_src.insert(0, "dataset", name)
+        all_summaries.append(summary_with_src)
+
+    # Tulis semua hasil ke satu file Excel.
+    if excel_sheets:
+        out_path = os.path.abspath(args.out)
+        with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
+            if all_summaries:
+                pd.concat(all_summaries, ignore_index=True).to_excel(
+                    writer, sheet_name="RINGKASAN_semua", index=False
+                )
+            for sheet_name, frame in excel_sheets.items():
+                frame.to_excel(writer, sheet_name=sheet_name, index=False)
+        print("\n" + "=" * 70)
+        print(f"[OK] File Excel hasil tersimpan di: {out_path}")
+        print("=" * 70)
+    else:
+        print("\n[!] Tidak ada data yang bisa ditulis ke Excel (semua file hilang/kosong).")
 
 
 if __name__ == "__main__":
