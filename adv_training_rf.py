@@ -11,7 +11,8 @@ Config is aligned with the FGSM RF attack we actually ran:
 - Attack mode: target_non_dropout.
 - Training attack scope: dropout_only (augment adversarial dropout rows).
 - Evaluation attack scope: true_positive_only (same as the attack flow).
-- PGD/FGSM epsilon (train and eval): 1.0, matching the final FGSM RF attack.
+- FGSM epsilon (train and eval): 1.5, matching the final FGSM RF attack
+  (fgsm_attack.py, EPSILON_LIST = [1.5]).
 - Split: stratified 70/20/10, same as the baseline RF.
 - The defended RF is a clone of the baseline RF pipeline refit on clean + adversarial data.
 - Threshold for the defended model is selected on the clean TEST set.
@@ -67,9 +68,11 @@ TARGET_COL = "target"
 NEGATIVE_LABEL = 0  # non-dropout
 POSITIVE_LABEL = 1  # dropout
 
-# Match your final FGSM RF attack setting.
-TRAIN_EPSILON_LIST = [1.0]
-EVAL_EPSILON_LIST = [1.0]
+# Match the final FGSM RF attack setting in fgsm_attack.py (EPSILON_LIST = [1.5]).
+# These constants are the single source of truth: the CLI defaults are derived
+# from them below, so changing the value here is enough.
+TRAIN_EPSILON_LIST = [1.5]
+EVAL_EPSILON_LIST = [1.5]
 
 THRESHOLDS = np.arange(0.05, 0.96, 0.01)
 DEFAULT_HIDDEN_DIMS = (128, 64, 32)
@@ -1360,14 +1363,26 @@ def build_arg_parser():
         choices=["all", "dropout_only", "true_positive_only"],
         help="Backward-compatible alias. If provided, it sets both train and eval attack scope.",
     )
-    parser.add_argument("--train-epsilons", default="1.0", help="Comma-separated train epsilon list. Default: 1.0")
-    parser.add_argument("--eval-epsilons", default="1.0", help="Comma-separated eval epsilon list. Default: 1.0")
+    parser.add_argument(
+        "--train-epsilons",
+        default=format_float_list(TRAIN_EPSILON_LIST),
+        help=f"Comma-separated train epsilon list. Default: {format_float_list(TRAIN_EPSILON_LIST)}",
+    )
+    parser.add_argument(
+        "--eval-epsilons",
+        default=format_float_list(EVAL_EPSILON_LIST),
+        help=f"Comma-separated eval epsilon list. Default: {format_float_list(EVAL_EPSILON_LIST)}",
+    )
 
     return parser
 
 
 def parse_float_list(text):
     return [float(x.strip()) for x in text.split(",") if x.strip()]
+
+
+def format_float_list(values):
+    return ",".join(str(float(v)) for v in values)
 
 
 def main():
