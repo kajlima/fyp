@@ -6,8 +6,12 @@ Aligned with the finalized setup:
 - Dataset: zenodo.csv
 - Feature set: full
 - Split: stratified 70/20/10 (same as the RF/MLP training and defence scripts)
-- RF defence output: rf_adversarial_training_full_results (FGSM, train/eval epsilon 1.0)
+- RF defence output: rf_adversarial_training_full_results (FGSM, train/eval epsilon 1.5)
 - MLP defence output: mlp_adversarial_training_full_results (PGD, train/eval epsilon 1.0)
+  The two models use different epsilons on purpose: the FGSM transfer attack needed
+  the larger budget before it damaged the RF F1-score, while PGD reaches the defended
+  MLP directly at 1.0. Each model is therefore internally consistent with its own
+  attack chapter, but the RF and MLP rows are not a like-for-like comparison.
 
 This script calculates:
 1. Proximity: L1, L2, Linf, mean/max absolute change (Eq. 3 and 4).
@@ -42,8 +46,8 @@ DEFAULT_OUTPUT_DIR = "proximity_sensitivity_final_results"
 DEFAULT_RF_DEFENCE_DIR = "rf_adversarial_training_full_results"
 DEFAULT_MLP_DEFENCE_DIR = "mlp_adversarial_training_full_results"
 
-RF_TRAIN_EPSILON = 1.0
-RF_EVAL_EPSILON = 1.0
+RF_TRAIN_EPSILON = 1.5
+RF_EVAL_EPSILON = 1.5
 MLP_TRAIN_EPSILON = 1.0
 MLP_EVAL_EPSILON = 1.0
 
