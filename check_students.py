@@ -9,7 +9,7 @@ ACTUAL final pipeline:
 
   Random Forest
     - attack   : FGSM, epsilon read from file (final run used 1.5), evaluated on RF
-    - defence  : FGSM adversarial training, train/eval epsilon read from file (1.0)
+    - defence  : FGSM adversarial training, train/eval epsilon 1.5
 
   MLP
     - attack   : PGD, epsilon read from file (final run used 1.0)
@@ -102,21 +102,49 @@ RF_DEFENCE_DIR = "rf_adversarial_training_full_results"
 MLP_ATTACK_DIR = "pgd_mlp_full_results"
 MLP_DEFENCE_DIR = "mlp_adversarial_training_full_results"
 
-# Per-model file patterns. {split} is filled in; epsilon is matched by glob (*)
-# so the script keeps working if the epsilon changes in a later run.
+# ============================================================
+# EPSILONS USED IN THE FINAL RUNS
+# ============================================================
+# Pinned explicitly instead of matched with a wildcard. Output folders normally
+# still contain files from earlier experiments at other epsilons, and any rule
+# that picks "the first" or "the highest" match will silently read the wrong run.
+# The RF and MLP values differ on purpose: the FGSM transfer attack needed the
+# larger budget before it damaged the RF F1-score, while PGD reaches the MLP
+RF_ATTACK_EPS = 1.5
+RF_DEFENCE_TRAIN_EPS = 1.5
+RF_DEFENCE_EVAL_EPS = 1.5
+
+MLP_ATTACK_EPS = 1.0
+MLP_DEFENCE_TRAIN_EPS = 1.0
+MLP_DEFENCE_EVAL_EPS = 1.0
+
+
+def eps_tag(value: float) -> str:
+    """1.5 -> '1p5'. Same tag the attack and defence scripts write."""
+    return str(float(value)).replace(".", "p")
+
+
+# Per-model file paths. {split} is filled in; epsilons come from the constants
+# above, so each entry points at exactly one run.
 MODEL_FILES = {
     "Random Forest": {
         "attack": "FGSM",
-        "attack_pred": [f"{RF_ATTACK_DIR}/rf_fgsm_{{split}}_predictions_eps_*.csv"],
-        "attack_raw": [f"{RF_ATTACK_DIR}/X_{{split}}_fgsm_raw_eps_*.csv"],
-        "defence_pred": [f"{RF_DEFENCE_DIR}/rf_defended_fgsm_{{split}}_predictions_train_eps_*_eval_eps_*.csv"],
+        "attack_pred": [f"{RF_ATTACK_DIR}/rf_fgsm_{{split}}_predictions_eps_{eps_tag(RF_ATTACK_EPS)}.csv"],
+        "attack_raw": [f"{RF_ATTACK_DIR}/X_{{split}}_fgsm_raw_eps_{eps_tag(RF_ATTACK_EPS)}.csv"],
+        "defence_pred": [
+            f"{RF_DEFENCE_DIR}/rf_defended_fgsm_{{split}}_predictions"
+            f"_train_eps_{eps_tag(RF_DEFENCE_TRAIN_EPS)}_eval_eps_{eps_tag(RF_DEFENCE_EVAL_EPS)}.csv"
+        ],
         "clean_prefix": "rf",
     },
     "MLP": {
         "attack": "PGD",
-        "attack_pred": [f"{MLP_ATTACK_DIR}/mlp_pgd_{{split}}_predictions_eps_*.csv"],
-        "attack_raw": [f"{MLP_ATTACK_DIR}/X_{{split}}_pgd_raw_eps_*.csv"],
-        "defence_pred": [f"{MLP_DEFENCE_DIR}/mlp_defended_pgd_{{split}}_predictions_train_eps_*_eval_eps_*.csv"],
+        "attack_pred": [f"{MLP_ATTACK_DIR}/mlp_pgd_{{split}}_predictions_eps_{eps_tag(MLP_ATTACK_EPS)}.csv"],
+        "attack_raw": [f"{MLP_ATTACK_DIR}/X_{{split}}_pgd_raw_eps_{eps_tag(MLP_ATTACK_EPS)}.csv"],
+        "defence_pred": [
+            f"{MLP_DEFENCE_DIR}/mlp_defended_pgd_{{split}}_predictions"
+            f"_train_eps_{eps_tag(MLP_DEFENCE_TRAIN_EPS)}_eval_eps_{eps_tag(MLP_DEFENCE_EVAL_EPS)}.csv"
+        ],
         "clean_prefix": "mlp",
     },
 }
@@ -146,16 +174,27 @@ def eps_from_name(path: str) -> Dict[str, Optional[float]]:
     return out
 
 
-def resolve_one(patterns: List[str], split: str, prefer_max_eps: bool = False) -> Optional[Path]:
-    """Return the best matching file for the patterns, or None."""
+def resolve_one(patterns: List[str], split: str) -> Optional[Path]:
+    """
+    Return the single file matching the patterns, or None if nothing matches.
+
+    Raises when more than one file matches. The epsilons are pinned in the
+    config above, so a second match means the folder does not look the way this
+    script assumes. Choosing one silently is exactly how results from an old run
+    end up being reported as if they were the new ones.
+    """
     hits: List[str] = []
     for pat in patterns:
         hits.extend(glob.glob(pat.format(split=split)))
     hits = sorted(set(hits))
     if not hits:
         return None
-    if prefer_max_eps:
-        hits.sort(key=lambda p: eps_from_name(p).get("epsilon") or -1, reverse=True)
+    if len(hits) > 1:
+        raise RuntimeError(
+            "More than one file matches a pinned epsilon:\n  "
+            + "\n  ".join(hits)
+            + "\nRemove or archive the duplicates before running."
+        )
     return Path(hits[0])
 
 
@@ -280,9 +319,9 @@ def build_model_split(model: str, split: str, clean_by_id: pd.DataFrame,
     spec = MODEL_FILES[model]
     stats = {"model": model, "split": split, "attack": spec["attack"]}
 
-    attack_pred_path = resolve_one(spec["attack_pred"], split, prefer_max_eps=True)
+    attack_pred_path = resolve_one(spec["attack_pred"], split)
     defence_pred_path = resolve_one(spec["defence_pred"], split)
-    raw_adv_path = resolve_one(spec["attack_raw"], split, prefer_max_eps=True)
+    raw_adv_path = resolve_one(spec["attack_raw"], split)
 
     file_map[f"{model}|{split}"] = {
         "attack_predictions": str(attack_pred_path) if attack_pred_path else None,
