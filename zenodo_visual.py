@@ -327,6 +327,18 @@ def get_val(df, model, stage, col):
     return float(sub.iloc[0][col])
 
 
+def round_to_display(value, decimals=2):
+    """
+    Round to the same precision the bar labels show. The delta arrows are worked
+    out from these rounded numbers so that a reader can subtract the printed bar
+    values by eye and land on the printed delta. Without this, a value such as
+    0.801887 prints as 0.80 but still contributes its hidden 0.001887 to the
+    delta, and the figure looks like it cannot do arithmetic. Exact figures stay
+    in the results tables, which is where the extra precision belongs.
+    """
+    return value if pd.isna(value) else round(float(value), decimals)
+
+
 def attack_eps(df, model):
     sub = df[(df["model"] == model) & (df["stage"] == "Before defence")]
     if sub.empty or pd.isna(sub.iloc[0]["eval_epsilon"]):
@@ -377,9 +389,9 @@ def plot_f1_journey(df, split):
 # ============================================================
 
 def _drop_recovery_panel(ax, df, model, colour, attack_name):
-    baseline = get_val(df, model, "Baseline clean", "f1_score")
-    under = get_val(df, model, "Before defence", "f1_score")
-    def_under = get_val(df, model, "After defence", "f1_score")
+    baseline = round_to_display(get_val(df, model, "Baseline clean", "f1_score"))
+    under = round_to_display(get_val(df, model, "Before defence", "f1_score"))
+    def_under = round_to_display(get_val(df, model, "After defence", "f1_score"))
     vals = [baseline, under, def_under]
     labels = ["Baseline\n(clean)", f"{attack_name}\nattack", f"{attack_name} after\ndefence"]
     colours = [COL["clean"], COL["attack"], COL["def_attack"]]
