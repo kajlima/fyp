@@ -192,15 +192,12 @@ def read_attack_predictions(path: Path, clean_prefix: str) -> pd.DataFrame:
 
 def read_defence_predictions(path: Path) -> pd.DataFrame:
     """
-    Defended-under-attack file -> tidy per-student frame.
-
     The two defence scripts use different schemas:
       * MLP writes both clean and adversarial columns in one row
         (clean_pred_label / adv_pred_label, clean_prob_dropout / adv_prob_dropout).
       * RF writes a single defended prediction per file
         (predicted_label / prob_dropout); because this file is the "Defended FGSM"
         run, predicted_label IS the defended prediction under attack.
-    We read whichever is present so both models work.
     """
     df = pd.read_csv(path)
     if STUDENT_COL not in df.columns:
