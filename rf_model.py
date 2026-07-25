@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import os
 import json
 import itertools
@@ -38,11 +36,6 @@ POSITIVE_LABEL = 1  # dropout
 
 THRESHOLDS = np.arange(0.05, 0.96, 0.01)
 
-# More resistant to overfitting than the initial RF grid:
-# - max_depth=None is not used
-# - min_samples_split and min_samples_leaf are set to larger values
-# - max_samples is used so each tree does not see all training rows
-# - several class_weight settings are tested to avoid an overly aggressive dropout bias
 PARAM_GRID = {
     "n_estimators": [500],
     "max_depth": [4, 6, 8, 10],
@@ -64,12 +57,9 @@ PARAM_GRID = {
 # ============================================================
 # FULL FEATURE SET FROM CLEANING PIPELINE
 # ============================================================
-# This script now runs only the full-feature Random Forest experiment.
-# student_id, academic_year, and target are not used as predictors.
 
 NON_FEATURE_COLS = ["student_id", "academic_year", "target"]
 
-# RF-C preprocessing policy, aligned with MLP-C:
 # - seniority is treated as categorical/one-hot, not as a linear numeric scale.
 # - *_flag columns are kept as binary indicators and are not standardized.
 # - remaining numeric columns are median-imputed. Random Forest does not need scaling.
@@ -281,15 +271,10 @@ def prepare_features_and_label(df, feature_set):
 
 def split_70_20_10_stratified(X, y, student_ids=None, random_state=42):
     """
-    Stratified random split with no grouping:
+    Stratified random split:
     - approximately 70% train
     - approximately 20% test
     - approximately 10% validation
-
-    The split is stratified by label so the dropout proportion is preserved
-    across all splits. Each row is treated as an independent observation; no
-    grouping by student_id is applied because the merged dataset already has
-    one unique student_id per row.
     """
 
     if student_ids is None:
