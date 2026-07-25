@@ -521,7 +521,7 @@ def make_preprocessed_attack_mask(preprocessor, selected_features, feature_set, 
     rows = []
     for idx, col in enumerate(numeric_cols):
         is_attackable = col in attackable_raw
-        mask[idx] = 1.5 if is_attackable else 0.0
+        mask[idx] = 1.0 if is_attackable else 0.0
         rows.append({
             "preprocessed_index": idx,
             "raw_feature": col,
