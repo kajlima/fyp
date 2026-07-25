@@ -1,33 +1,3 @@
-#!/usr/bin/env python3
-"""
-Zenodo FULL-feature adversarial robustness visualization (thesis edition).
-
-Single script, synchronized with the ACTUAL final pipeline outputs. All epsilon
-values are READ FROM THE RESULT FILES, never hardcoded, so every label matches
-the data. Produces a coherent, thesis-quality figure set that tells one story
-per model: baseline -> under attack -> defended (clean) -> defended (under attack).
-
-Result files consumed (real output folders first, fallbacks after):
-  Random Forest attack   : fgsm_rf_full_results/rf_fgsm_attack_results.csv
-  Random Forest defence  : rf_adversarial_training_full_results/rf_adversarial_training_results.csv
-  MLP attack             : pgd_mlp_full_results/mlp_pgd_attack_results.csv
-  MLP defence            : mlp_adversarial_training_full_results/mlp_adversarial_training_results.csv
-  Proximity/sensitivity  : proximity_sensitivity_final_results/proximity_sensitivity_final_summary.csv
-  Feature sensitivity     : proximity_sensitivity_final_results/top15_sensitive_features_final.csv
-
-Figures per split (test, validation):
-  01  F1 journey across the four stages (RF vs MLP, grouped)
-  02  F1 drop under attack and recovery after defence (delta-annotated, 2 panels)
-  03  Precision / Recall / F1 under attack, before vs after defence (2 panels)
-  04  Dropout hiding rate, before vs after defence (RF vs MLP)
-  05  Clean-performance cost of the defence (baseline clean vs defended clean)
-  06  Proximity: mean L2 and mean sensitivity of adversarial samples (2 panels)
-  07  Top sensitive attackable features (RF and MLP, 2 panels)
-
-Tables: zenodo_performance_summary.csv and zenodo_visualization_summary.xlsx
-Output directory: zenodo_adversarial_visualizations/
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
