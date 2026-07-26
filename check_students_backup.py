@@ -12,6 +12,9 @@ import pandas as pd
 # ============================================================
 # CONFIG
 # ============================================================
+# be reconstructed. "successfully attacked" = real dropout, caught when clean, hidden
+# under attack. "successfully recovered" = an attacked student the defended model
+# still predicts as dropout under attack.
 
 CSV_PATH = Path("zenodo.csv")
 OUTPUT_DIR = Path("zenodo_attack_recovery_students_full")
@@ -25,11 +28,11 @@ STUDENT_COL = "student_id"
 POSITIVE_LABEL = 1  # dropout
 SPLITS = ("test", "validation")
 
-# Real FULL feature set (33 columns)
+# full feature set (34 columns)
 FULL_FEATURES = [
     "degree_size", "seniority", "highest_course_year_enrolled", "adapted_studies_flag",
     "credits_enrolled_semester_a", "credits_enrolled_semester_b",
-    "total_credits_enrolled_academic_year", 
+    "total_credits_enrolled_academic_year",
     "completion_rate_one_year_before", "completion_rate_two_years_before",
     "completion_rate_three_years_before", "completion_rate_one_year_before_missing_flag",
     "completion_rate_two_years_before_missing_flag", "completion_rate_three_years_before_missing_flag",
@@ -43,7 +46,7 @@ FULL_FEATURES = [
     "lms_total_minutes_sem_b", "attendance_days_sem_b",
 ]
 
-# Real attackable feature set (21 columns)
+# only these 21 features move under attack
 ATTACKABLE_FEATURES = [
     "credits_enrolled_semester_a", "credits_enrolled_semester_b",
     "total_credits_enrolled_academic_year",
@@ -57,7 +60,7 @@ ATTACKABLE_FEATURES = [
     "lms_total_minutes_sem_b", "attendance_days_sem_b",
 ]
 
-# Output folders produced by the attack / defence scripts.
+# output folders produced by the attack / defence scripts
 RF_ATTACK_DIR = "fgsm_rf_full_results"
 RF_DEFENCE_DIR = "rf_adversarial_training_full_results"
 MLP_ATTACK_DIR = "pgd_mlp_full_results"
@@ -69,18 +72,18 @@ MLP_DEFENCE_DIR = "mlp_adversarial_training_full_results"
 RF_ATTACK_EPS = 1.5
 RF_DEFENCE_TRAIN_EPS = 1.5
 RF_DEFENCE_EVAL_EPS = 1.5
-
 MLP_ATTACK_EPS = 1.0
 MLP_DEFENCE_TRAIN_EPS = 1.0
 MLP_DEFENCE_EVAL_EPS = 1.0
 
 
 def eps_tag(value: float) -> str:
-    """1.5 -> '1p5'. Same tag the attack and defence scripts write."""
+    # 1.5 -> '1p5', same tag the attack and defence scripts write
     return str(float(value)).replace(".", "p")
 
 
-# Per-model file paths. {split} is filled in; epsilons come from the constants
+# per-model file paths. {split} is filled in; epsilons come from the constants
+# above, so each entry points at exactly one run
 MODEL_FILES = {
     "Random Forest": {
         "attack": "FGSM",
@@ -117,7 +120,7 @@ def label_text(value) -> str:
 
 
 def eps_from_name(path: str) -> Dict[str, Optional[float]]:
-    """Pull eval / train epsilon out of a filename tag like eps_1p5 or eval_eps_1p0."""
+    # pull eval / train / plain epsilon out of a filename tag like eps_1p5 or eval_eps_1p0
     import re
     out = {"epsilon": None, "train_epsilon": None, "eval_epsilon": None}
     for key, pat in [("train_epsilon", r"train_eps_([0-9]+p[0-9]+)"),
@@ -130,7 +133,7 @@ def eps_from_name(path: str) -> Dict[str, Optional[float]]:
 
 
 def resolve_one(patterns: List[str], split: str) -> Optional[Path]:
-    
+    # return the single file matching the patterns, or None. raise on more than one
     hits: List[str] = []
     for pat in patterns:
         hits.extend(glob.glob(pat.format(split=split)))
@@ -139,21 +142,22 @@ def resolve_one(patterns: List[str], split: str) -> Optional[Path]:
         return None
     if len(hits) > 1:
         raise RuntimeError(
-            "More than one file matches a pinned epsilon:\n  "
+            "more than one file matches a pinned epsilon:\n  "
             + "\n  ".join(hits)
-            + "\nRemove or archive the duplicates before running."
+            + "\nremove or archive the duplicates before running."
         )
     return Path(hits[0])
 
 
 def normalize_target(series: pd.Series) -> pd.Series:
+    # normalize target text before mapping to 0/1
     norm = (series.astype(str).str.strip().str.lower()
             .replace({"non dropout": "non-dropout", "non_dropout": "non-dropout", "drop out": "dropout"}))
     mapping = {"non-dropout": 0, "dropout": 1, "b": 0, "a": 1, "0": 0, "1": 1}
     y = norm.map(mapping)
     if y.isna().any():
         bad = series.loc[y.isna()].unique().tolist()
-        raise ValueError(f"Target values could not be mapped: {bad}")
+        raise ValueError(f"target values could not be mapped: {bad}")
     return y.astype(int)
 
 
@@ -165,11 +169,11 @@ def _first_col(df: pd.DataFrame, options: List[str]) -> Optional[str]:
 
 
 # ============================================================
-# READ + STANDARDIZE PREDICTION FILES (keyed by student_id)
+# READ AND STANDARDIZE PREDICTION FILES (keyed by student_id)
 # ============================================================
 
 def read_attack_predictions(path: Path, clean_prefix: str) -> pd.DataFrame:
-    """Undefended attack file -> tidy per-student frame."""
+    # undefended attack file -> tidy per-student frame
     df = pd.read_csv(path)
     clean_pred = _first_col(df, [f"{clean_prefix}_clean_pred_label", "clean_pred_label"])
     adv_pred = _first_col(df, [f"{clean_prefix}_adv_pred_label", "adv_pred_label"])
@@ -191,18 +195,14 @@ def read_attack_predictions(path: Path, clean_prefix: str) -> pd.DataFrame:
 
 
 def read_defence_predictions(path: Path) -> pd.DataFrame:
-    """
-    The two defence scripts use different schemas:
-      * MLP writes both clean and adversarial columns in one row
-        (clean_pred_label / adv_pred_label, clean_prob_dropout / adv_prob_dropout).
-      * RF writes a single defended prediction per file
-        (predicted_label / prob_dropout); because this file is the "Defended FGSM"
-        run, predicted_label IS the defended prediction under attack.
-    """
+    # defended-under-attack file -> tidy per-student frame. the two defence scripts
+    # use different schemas: MLP writes clean and adversarial columns in one row;
+    # RF writes a single defended prediction (predicted_label / prob_dropout), which
+    # for the Defended FGSM run is the defended prediction under attack. read whichever
+    # is present so both models work
     df = pd.read_csv(path)
     if STUDENT_COL not in df.columns:
         raise KeyError(f"{path} has no '{STUDENT_COL}' column.")
-
     adv_pred_col = _first_col(df, ["adv_pred_label", "predicted_label", "y_pred", "prediction"])
     if adv_pred_col is None:
         raise KeyError(f"{path} has no defended prediction column "
@@ -210,7 +210,6 @@ def read_defence_predictions(path: Path) -> pd.DataFrame:
     adv_prob_col = _first_col(df, ["adv_prob_dropout", "prob_dropout", "predicted_prob_dropout"])
     clean_pred_col = _first_col(df, ["clean_pred_label"])
     clean_prob_col = _first_col(df, ["clean_prob_dropout"])
-
     out = pd.DataFrame({
         STUDENT_COL: df[STUDENT_COL].values,
         "defended_adv_pred_label": df[adv_pred_col].astype(int).values,
@@ -230,7 +229,10 @@ def read_defence_predictions(path: Path) -> pd.DataFrame:
 
 def attach_adv_diffs(table: pd.DataFrame, attack_pred_path: Optional[Path],
                      raw_adv_path: Optional[Path], clean_by_id: Optional[pd.DataFrame]) -> pd.DataFrame:
-    
+    # adversarial raw files have no student_id; their rows are in the same order as
+    # the attack prediction file. tag the raw rows with the prediction file's
+    # student_id (positional), join by student_id, then compute adv - clean diffs
+    # on the attackable features
     if attack_pred_path is None or raw_adv_path is None or clean_by_id is None or table.empty:
         return table
     pred_ids = pd.read_csv(attack_pred_path)[STUDENT_COL].values
@@ -268,6 +270,7 @@ def build_model_split(model: str, split: str, clean_by_id: pd.DataFrame,
         "defence_predictions": str(defence_pred_path) if defence_pred_path else None,
         "attack_raw_features": str(raw_adv_path) if raw_adv_path else None,
     }
+
     if attack_pred_path is None or defence_pred_path is None:
         print(f"  {model} / {split}: missing attack or defence prediction file, skipped.")
         return None, stats
@@ -292,7 +295,7 @@ def build_model_split(model: str, split: str, clean_by_id: pd.DataFrame,
     table["attack_adv_pred_text"] = table["attack_adv_pred_label"].map(label_text)
     table["defended_adv_pred_text"] = table["defended_adv_pred_label"].map(label_text)
 
-    # clean raw FULL features by student_id
+    # clean raw full features by student_id
     clean_cols = [STUDENT_COL] + [c for c in FULL_FEATURES if c in clean_by_id.columns]
     clean_small = clean_by_id[clean_cols].rename(
         columns={c: f"clean_{c}" for c in FULL_FEATURES if c in clean_by_id.columns})
@@ -332,10 +335,10 @@ def main():
     print("=" * 80)
 
     if not CSV_PATH.exists():
-        raise FileNotFoundError(f"Dataset not found: {CSV_PATH}")
+        raise FileNotFoundError(f"dataset not found: {CSV_PATH}")
     raw = pd.read_csv(CSV_PATH)
     if STUDENT_COL not in raw.columns:
-        raise KeyError(f"Dataset has no '{STUDENT_COL}' column; cannot join predictions.")
+        raise KeyError(f"dataset has no '{STUDENT_COL}' column; cannot join predictions.")
     raw["actual_label"] = normalize_target(raw[TARGET_COL])
     clean_by_id = raw.drop_duplicates(subset=STUDENT_COL).reset_index(drop=True)
 
@@ -352,7 +355,7 @@ def main():
                 sheets[sheet] = table
 
     if not sheets:
-        raise RuntimeError("No attacked/recovered tables were built. Check the result folders.")
+        raise RuntimeError("no attacked/recovered tables were built. check the result folders.")
 
     summary = pd.DataFrame(all_stats)
     summary.to_csv(OUTPUT_SUMMARY_CSV, index=False)
